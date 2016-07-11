@@ -237,7 +237,8 @@ public class AliRestClient implements RestClient {
         String authPoint = pathJoin("/", location, "/authentication-point/alm-authenticate");
         String authXml = createAuthXml();
         PostMethod post = initPostMethod(authPoint, authXml);
-        ResultInfo resultInfo = ResultInfo.create(null);
+        //ResultInfo resultInfo = ResultInfo.create(null);
+		ResultInfo resultInfo = ResultInfo.create(new ByteArrayOutputStream());
         executeAndWriteResponse(post, resultInfo, Collections.<Integer>emptySet());
 
         if(resultInfo.getHttpStatus() == HttpStatus.SC_NOT_FOUND) {
@@ -259,7 +260,11 @@ public class AliRestClient implements RestClient {
         }
 
         Cookie[] cookies = httpClient.getState().getCookies();
-        Cookie ssoCookie = getSessionCookieByName(cookies, COOKIE_SSO_NAME);
+        //Cookie ssoCookie = getSessionCookieByName(cookies, COOKIE_SSO_NAME);
+		Cookie ssoCookie = getSessionCookieFromResponse(post, resultInfo);
+		if(ssoCookie != null) {
+			httpClient.getState().addCookie(ssoCookie);
+		}
         addTenantCookie(ssoCookie);
 
         //Since ALM 12.00 it is required explicitly ask for QCSession calling "/rest/site-session"
@@ -277,6 +282,20 @@ public class AliRestClient implements RestClient {
         cookies = httpClient.getState().getCookies();
         Cookie qcCookie = getSessionCookieByName(cookies, COOKIE_SESSION_NAME);
         sessionContext = new SessionContext(location, ssoCookie, qcCookie);
+    }
+	
+	private Cookie getSessionCookieFromResponse(PostMethod post, ResultInfo resultInfo) {
+        if(resultInfo.getBodyStream() != null) {
+            String response = resultInfo.getBodyStream().toString();
+            if(response.startsWith("{\"token\":\"") && response.endsWith("\"}")) {
+                try {
+                    return new Cookie(post.getURI().getHost(), COOKIE_SSO_NAME, response.substring(10, response.length() - 2), "/", null, false);
+                } catch (URIException e) {
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     private PostMethod initPostMethod(String restEndPoint, String xml) {
